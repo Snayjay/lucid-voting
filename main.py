@@ -13,14 +13,29 @@ st.set_page_config(page_title="LUCID", page_icon="⚖️", layout="wide")
 
 # Helper to get configuration from st.secrets or environment variables
 def get_config(key, default=None):
-    if key in st.secrets:
+    # 1. Try st.secrets (dictionary-like access)
+    try:
         return st.secrets[key]
-    return os.getenv(key, default)
+    except (KeyError, AttributeError, FileNotFoundError):
+        # 2. Try os.getenv
+        return os.getenv(key, default)
 
 # Initialize API Keys
 gemini_key = get_config("GEMINI_API_KEY")
 supabase_url = get_config("SUPABASE_URL")
 supabase_key = get_config("SUPABASE_KEY")
+
+# Sidebar Debug (Only shows if keys are missing)
+if not gemini_key or not supabase_url:
+    with st.sidebar.expander("🔍 Debug: Key Check"):
+        st.write("Checking for keys...")
+        st.write(f"GEMINI_API_KEY found: {bool(gemini_key)}")
+        st.write(f"SUPABASE_URL found: {bool(supabase_url)}")
+        st.write(f"SUPABASE_KEY found: {bool(supabase_key)}")
+        try:
+            st.write("Available Secret Keys:", list(st.secrets.keys()))
+        except:
+            st.write("No secrets detected by Streamlit.")
 
 # Initialize Gemini
 if gemini_key:
