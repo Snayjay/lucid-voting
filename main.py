@@ -21,7 +21,8 @@ def get_config(key, default=None):
         return os.getenv(key, default)
 
 # Initialize API Keys
-gemini_key = get_config("GEMINI_API_KEY")
+# Check for both GEMINI_API_KEY and GOOGLE_API_KEY to be robust
+gemini_key = get_config("GEMINI_API_KEY") or get_config("GOOGLE_API_KEY")
 supabase_url = get_config("SUPABASE_URL")
 supabase_key = get_config("SUPABASE_KEY")
 
