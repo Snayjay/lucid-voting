@@ -5,23 +5,29 @@ import os
 from dotenv import load_dotenv
 import json
 
-# Load environment variables
+# Load environment variables for local development
 load_dotenv()
 
 # Configuration
 st.set_page_config(page_title="LUCID", page_icon="⚖️", layout="wide")
 
+# Helper to get configuration from st.secrets or environment variables
+def get_config(key, default=None):
+    if key in st.secrets:
+        return st.secrets[key]
+    return os.getenv(key, default)
+
 # Initialize API Keys
-gemini_key = os.getenv("GEMINI_API_KEY")
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
+gemini_key = get_config("GEMINI_API_KEY")
+supabase_url = get_config("SUPABASE_URL")
+supabase_key = get_config("SUPABASE_KEY")
 
 # Initialize Gemini
 if gemini_key:
     genai.configure(api_key=gemini_key)
     model = genai.GenerativeModel('gemini-2.0-flash-exp')
 else:
-    st.error("Missing GEMINI_API_KEY in .env")
+    st.error("Missing GEMINI_API_KEY. Please set it in Streamlit Secrets or a .env file.")
 
 # Initialize Supabase
 supabase: Client = None
@@ -31,7 +37,7 @@ if supabase_url and supabase_key:
     except Exception as e:
         st.error(f"Supabase connection failed: {e}")
 else:
-    st.error("Missing Supabase credentials in .env")
+    st.error("Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_KEY in Streamlit Secrets or a .env file.")
 
 # Sidebar Navigation
 st.sidebar.title("Navigation")
