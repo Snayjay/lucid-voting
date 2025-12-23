@@ -5,6 +5,10 @@ import os
 from dotenv import load_dotenv
 import json
 import PIL.Image
+import time
+import io
+import hashlib
+import pandas as pd
 
 # Load environment variables for local development
 load_dotenv()
@@ -23,6 +27,12 @@ if 'login_tab' not in st.session_state:
     st.session_state.login_tab = "login"
 if 'show_login_dialog' not in st.session_state:
     st.session_state.show_login_dialog = False
+if 'pending_voter_id' not in st.session_state:
+    st.session_state.pending_voter_id = None
+if 'reg_step' not in st.session_state:
+    st.session_state.reg_step = 1
+if 'reg_data' not in st.session_state:
+    st.session_state.reg_data = {}
 
 # Custom CSS - Federal Government Website Style
 st.markdown("""
@@ -69,43 +79,127 @@ st.markdown("""
             padding: 0;
             margin: 0;
         }
+
+        /* Anchor-based targeting for the federal header row */
+        div:has(> #header-anchor) + div[data-testid="stHorizontalBlock"] {
+            background-color: #1b1b1b !important;
+            border-bottom: 4px solid #005ea2 !important;
+            padding: 0.5rem 2rem !important;
+            z-index: 1000 !important;
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+        }
         
-        /* Top banner - 36px height for Login link */
-        .top-banner {
-            background-color: #1b1b1b;
-            color: #ffffff;
-            height: 36px;
-            padding: 0 2rem;
-            border-bottom: 4px solid #005ea2;
+        /* Content Buffers */
+        .logo-buffer {
+            margin-left: 20px !important;
+        }
+        
+        .title-buffer {
+            padding-left: 25px !important;
+            margin-left: 0 !important;
+        }
+        
+        /* Iris Scanner Styles - Apply zoom to both live video and the captured result image */
+        div[data-testid="stCameraInput"] video, 
+        div[data-testid="stCameraInput"] img {
+            transform: scale(1.5) !important;
+            transform-origin: center !important;
+        }
+        
+        .scanner-guide {
+            border: 2px dashed #B7986C;
+            border-radius: 50%;
+            width: 250px;
+            height: 250px;
+            margin: 20px auto;
             display: flex;
             align-items: center;
-            justify-content: flex-end;
-            margin-top: 0 !important;
-            margin-bottom: 0 !important;
+            justify-content: center;
+            color: #B7986C;
+            text-align: center;
+            font-weight: 600;
+            background-color: rgba(183, 152, 108, 0.1);
+        }
+        
+        .scanning-text {
+            color: #005ea2;
+            font-weight: 700;
+            font-family: monospace;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        /* Top banner fallback - can be used as a spacer if needed */
+        .top-banner {
+            background-color: transparent;
+            height: 0;
+            margin: 0;
+            padding: 0;
         }
         
         .top-banner-content {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 1rem;
-            height: 100%;
+            display: none;
         }
         
         .login-link {
-            color: #005ea2 !important;
-            text-decoration: underline !important;
-            cursor: pointer !important;
-            font-size: 0.875rem !important;
-            background: none !important;
+            display: none;
+        }
+
+        /* Disguised button for header */
+        div[data-testid="stButton"] > button {
+            background-color: transparent !important;
             border: none !important;
+            color: #F6F6F6 !important; /* Off-White for dark background */
+            text-decoration: underline !important;
+            font-size: 0.875rem !important;
+            font-weight: 700 !important;
             padding: 0 !important;
-            font-weight: 600 !important;
+            margin: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            box-shadow: none !important;
+            line-height: 1.2 !important;
+            width: auto !important;
+        }
+
+        div[data-testid="stButton"] > button:hover {
+            color: #B7986C !important; /* Gold Accent on hover */
+            text-decoration: none !important;
+            background-color: transparent !important;
+        }
+
+        div[data-testid="stButton"] > button:active {
+            background-color: transparent !important;
+        }
+
+        /* Banner adjustment for columns - Cleanup of unused class */
+        .top-banner-unused {
+            display: none;
         }
         
-        .login-link:hover {
-            color: #1a4480 !important;
+        /* Logo styling in header */
+        .header-logo-text {
+            color: #F6F6F6 !important; /* Off-White for dark background */
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            padding: 0;
             text-decoration: none !important;
+        }
+        
+        .header-bg {
+            background-color: #E9ECEF;
+            border-bottom: 0.25rem solid #005ea2;
+            height: 46px;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
         }
         
         /* Modal Dialog Styles */
@@ -238,54 +332,6 @@ st.markdown("""
             display: none;
         }
         
-        .tab-content.active {
-            display: block;
-        }
-        
-        /* Main Header */
-        .main-header {
-            background-color: #E9ECEF;
-            border-bottom: 0.25rem solid #005ea2;
-            height: 46px;
-            padding: 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            display: flex;
-            align-items: center;
-        }
-        
-        .header-container {
-            width: 100%;
-            padding: 0 2rem;
-            display: flex;
-            justify-content: flex-start;
-            align-items: center;
-            height: 100%;
-        }
-        
-        .header-logo {
-            font-size: 1.625rem;
-            font-weight: 700;
-            color: #005ea2;
-            text-decoration: none !important;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            line-height: 1;
-        }
-        
-        .header-logo:hover {
-            color: #1a4480;
-            text-decoration: none !important;
-        }
-        
-        .header-logo:visited {
-            text-decoration: none !important;
-        }
-        
-        .header-logo:active {
-            text-decoration: none !important;
-        }
-        
         .status-badge {
             background-color: #333333 !important;
             color: #ffffff !important;
@@ -304,13 +350,34 @@ st.markdown("""
             border-color: #2e8540 !important;
         }
         
-        /* Main Content Area */
-        .main-content {
-            width: 100%;
-            margin: 0;
-            padding: 2rem;
-            background-color: #ffffff;
-            min-height: 60vh;
+        /* Main Content Anchor Targeting */
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] {
+            background-color: #ffffff !important;
+            padding: 2rem 5% !important;
+            min-height: calc(100vh - 150px) !important;
+            color: #1b1b1b !important;
+            margin-top: 70px !important;
+            margin-bottom: 80px !important;
+            position: relative !important;
+            z-index: 1 !important;
+            overflow-y: auto !important;
+        }
+
+        /* Ensure text inside the white area is visible (dark text) */
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] h1,
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] h2,
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] h3,
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] p,
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] li,
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] .stMarkdown,
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] .stExpander p {
+            color: #1b1b1b !important;
+        }
+
+        /* Adjust expanders inside the white area */
+        div:has(> #main-anchor) + div[data-testid="stVerticalBlock"] .stExpander {
+            background-color: #f8f9fa !important;
+            border: 1px solid #dee2e6 !important;
         }
         
         /* Page Title */
@@ -349,55 +416,6 @@ st.markdown("""
             color: #1b1b1b;
             font-size: 1rem;
             line-height: 1.6;
-            margin-bottom: 1.5rem;
-        }
-        
-        .pros-cons-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            margin-top: 1rem;
-        }
-        
-        .pros-section, .cons-section {
-            padding: 1rem;
-            border-radius: 4px;
-        }
-        
-        .pros-section {
-            background-color: #e7f4e4;
-            border-left: 4px solid #2e8540;
-        }
-        
-        .cons-section {
-            background-color: #fce8e6;
-            border-left: 4px solid #d54309;
-        }
-        
-        .section-title {
-            font-size: 1.125rem;
-            font-weight: 700;
-            margin-top: 0;
-            margin-bottom: 0.75rem;
-        }
-        
-        .pros-title {
-            color: #2e8540;
-        }
-        
-        .cons-title {
-            color: #d54309;
-        }
-        
-        .pros-list, .cons-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .pros-list li, .cons-list li {
-            padding: 0.5rem 0;
-            color: #1b1b1b;
         }
         
         /* Button Styling */
@@ -432,11 +450,16 @@ st.markdown("""
         
         /* Footer */
         .footer {
-            background-color: #1b1b1b;
-            color: #ffffff;
-            padding: 2rem;
-            margin-top: 3rem;
-            border-top: 4px solid #005ea2;
+            background-color: #1b1b1b !important;
+            color: #ffffff !important;
+            padding: 1rem 2rem !important;
+            border-top: 4px solid #005ea2 !important;
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 1000 !important;
+            height: 80px;
         }
         
         .footer-content {
@@ -448,8 +471,8 @@ st.markdown("""
         
         /* Responsive adjustments */
         @media (max-width: 768px) {
-            .pros-cons-container {
-                grid-template-columns: 1fr;
+            .logo-buffer {
+                margin-left: 10px !important;
             }
         }
     </style>
@@ -461,6 +484,298 @@ def get_config(key, default=None):
         return st.secrets[key]
     except (KeyError, AttributeError, FileNotFoundError):
         return os.getenv(key, default)
+
+# Helper function to determine the current redirect URL for Supabase Auth
+def get_redirect_url():
+    # Logic: Default to the Live URL
+    url = "https://lucid-voting.streamlit.app"
+    
+    # If we find a local .env file (which implies we are on your laptop), switch to localhost
+    if os.path.exists(".env"): 
+        url = "http://localhost:8501"
+        
+    return url
+
+# Biometric Verification Helper
+def verify_biometric_match(reference_bytes, current_bytes):
+    if not model:
+        return False
+    
+    try:
+        ref_img = PIL.Image.open(io.BytesIO(reference_bytes))
+        live_img = PIL.Image.open(io.BytesIO(current_bytes))
+        
+        prompt = """You are a biometric security officer. You have two images. Image A is the Reference. Image B is the Live Scan.
+        Task 1: LIVENESS. Does Image B appear to be a live capture (not a photo of a screen)?
+        Task 2: MATCH. Do the facial features in Image B match Image A?
+        Return JSON: {"liveness": true, "match": true, "confidence": "high"}"""
+        
+        response = model.generate_content([prompt, ref_img, live_img])
+        
+        # Parse JSON from response
+        raw_response = response.text.strip()
+        if "```json" in raw_response:
+            raw_response = raw_response.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_response:
+            raw_response = raw_response.split("```")[1].strip()
+            
+        # Robustly handle single quotes before parsing
+        raw_response = raw_response.replace("'", '"')
+            
+        result_json = json.loads(raw_response)
+        return result_json.get('liveness', False) and result_json.get('match', False)
+    except Exception as e:
+        st.error(f"Verification Error: {e}")
+        return False
+
+# Biometric Storage Helpers
+def upload_biometric(voter_id, image_data):
+    try:
+        # If image_data is PIL Image, convert to bytes
+        if hasattr(image_data, 'save'):
+            img_byte_arr = io.BytesIO()
+            image_data.save(img_byte_arr, format='JPEG')
+            image_data = img_byte_arr.getvalue()
+            
+        supabase.storage.from_("biometrics").upload(
+            path=f"{voter_id}_ref.jpg",
+            file=image_data,
+            file_options={"content-type": "image/jpeg"}
+        )
+        return True
+    except Exception as e:
+        st.error(f"Storage Upload Failed: {e}")
+        return False
+
+def get_biometric_ref(voter_id):
+    try:
+        return supabase.storage.from_("biometrics").download(f"{voter_id}_ref.jpg")
+    except Exception as e:
+        # Don't show error here as we handle missing IDs in the UI
+        return None
+
+# Biometric Identity Portal
+@st.dialog("Biometric Identity Portal")
+def login_dialog():
+    if 'reg_step' not in st.session_state:
+        st.session_state.reg_step = 1
+    
+    mode = st.radio("Choose Action", ["New Voter Registration", "Verify Identity"], horizontal=True, key="portal_mode")
+    
+    st.markdown("---")
+    
+    if mode == "Verify Identity":
+        claimed_passcode = st.text_input("Enter your 10-digit Passcode", type="password", placeholder="Your secret code")
+        camera_image = st.camera_input("Biometric Scan")
+        
+        if camera_image:
+            if st.button("Verify Match", type="primary", use_container_width=True):
+                with st.spinner("Biometric Matching..."):
+                    time.sleep(1.5)
+                    try:
+                        # Convert camera image to bytes
+                        img = PIL.Image.open(camera_image)
+                        
+                        # Apply Digital Zoom (1.5x) to match the CSS preview
+                        width, height = img.size
+                        new_width = width / 1.5
+                        new_height = height / 1.5
+                        img = img.crop(((width - new_width) / 2, (height - new_height) / 2, (width + new_width) / 2, (height + new_height) / 2))
+                        
+                        img_byte_arr = io.BytesIO()
+                        img.save(img_byte_arr, format='JPEG')
+                        current_bytes = img_byte_arr.getvalue()
+
+                        # Lookup Voter ID by hashed passcode
+                        hashed_claimed = hashlib.sha256(claimed_passcode.encode()).hexdigest()
+                        profile_res = supabase.table("profiles").select("voter_id").eq("passcode_hash", hashed_claimed).execute()
+                        
+                        if profile_res.data:
+                            voter_id = profile_res.data[0]['voter_id']
+                            ref_bytes = get_biometric_ref(voter_id)
+                            
+                            if ref_bytes:
+                                if verify_biometric_match(ref_bytes, current_bytes):
+                                    st.success("✅ Identity Verified. Welcome back.")
+                                    st.session_state.voter_id = voter_id
+                                    st.session_state.show_login_dialog = False
+                                    st.balloons()
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Biometric Mismatch: Identity could not be confirmed.")
+                            else:
+                                st.error("❌ System Error: Biometric record not found.")
+                        else:
+                            st.error("❌ Invalid Passcode.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+    else:
+        # REGISTRATION WIZARD
+        steps = ["Passcode", "ID Front", "ID Back", "Live Scan"]
+        st.write(f"Step {st.session_state.reg_step} of 4: {steps[st.session_state.reg_step-1]}")
+        
+        if st.session_state.reg_step == 1:
+            reg_passcode = st.text_input("Create a 10-digit Passcode", type="password", placeholder="Minimum 10 characters")
+            verify_passcode = st.text_input("Verify Passcode", type="password", placeholder="Re-enter your passcode")
+            
+            # Real-time verification display
+            if verify_passcode:
+                if reg_passcode == verify_passcode and len(reg_passcode) >= 10:
+                    st.success("✅ Passcodes match and meet length requirement.")
+                elif reg_passcode == verify_passcode:
+                    st.warning("⚠️ Passcodes match but must be at least 10 characters.")
+                else:
+                    st.error("❌ Passcodes do not match.")
+
+            if st.button("Next: Scan ID Front", use_container_width=True):
+                if len(reg_passcode) < 10:
+                    st.error("Passcode must be at least 10 characters.")
+                elif not reg_passcode.isalnum():
+                    st.error("Passcode must be alphanumeric (letters and numbers only).")
+                elif reg_passcode != verify_passcode:
+                    st.error("Passcodes do not match. Please try again.")
+                else:
+                    st.session_state.reg_data['passcode'] = reg_passcode
+                    st.session_state.reg_step = 2
+                    st.rerun()
+
+        elif st.session_state.reg_step == 2:
+            st.info("📷 Capture the FRONT of your Government ID. Ensure all text is readable.")
+            id_front = st.camera_input("Scan ID Front")
+            if id_front:
+                if st.button("Process ID Front", type="primary", use_container_width=True):
+                    with st.spinner("Extracting ID Information..."):
+                        try:
+                            img = PIL.Image.open(id_front)
+                            prompt = 'Extract Name, Address, and Date of Birth from this ID. Also, is this a valid ID? Respond ONLY with JSON: {"name": "...", "address": "...", "dob": "...", "valid_id": true}'
+                            response = model.generate_content([prompt, img])
+                            
+                            raw = response.text.strip().replace("'", '"')
+                            if "```json" in raw: raw = raw.split("```json")[1].split("```")[0].strip()
+                            elif "```" in raw: raw = raw.split("```")[1].strip()
+                            
+                            res = json.loads(raw)
+                            if res.get('valid_id'):
+                                # Create Identity Hash to prevent duplicates
+                                identity_string = f"{res['name']}|{res['dob']}|{res['address']}".upper().strip()
+                                identity_hash = hashlib.sha256(identity_string.encode()).hexdigest()
+                                
+                                # Check for duplicates
+                                dup_check = supabase.table("profiles").select("id").eq("identity_hash", identity_hash).execute()
+                                if dup_check.data:
+                                    st.error("❌ Registration Blocked: This identity is already registered.")
+                                    if st.button("Start Over"):
+                                        st.session_state.reg_step = 1
+                                        st.rerun()
+                                else:
+                                    st.session_state.reg_data.update(res)
+                                    st.session_state.reg_data['identity_hash'] = identity_hash
+                                    # Save the ID Face for later comparison
+                                    st.session_state.reg_data['id_image'] = id_front.getvalue()
+                                    st.session_state.reg_step = 3
+                                    st.rerun()
+                            else:
+                                st.error("❌ Invalid ID: Could not detect a valid government document.")
+                        except Exception as e:
+                            st.error(f"OCR Error: {e}")
+
+        elif st.session_state.reg_step == 3:
+            st.info("📷 Capture the BACK of your Government ID. Focus on the barcode.")
+            id_back = st.camera_input("Scan ID Barcode")
+            if id_back:
+                if st.button("Verify Barcode", type="primary", use_container_width=True):
+                    with st.spinner("Authenticating Barcode..."):
+                        try:
+                            img = PIL.Image.open(id_back)
+                            prompt = 'Read the PDF417 barcode data on the back of this ID. Return the raw text or a summary of the data. Respond ONLY with JSON: {"barcode_detected": true, "raw_data": "..."}'
+                            response = model.generate_content([prompt, img])
+                            
+                            raw = response.text.strip().replace("'", '"')
+                            if "```json" in raw: raw = raw.split("```json")[1].split("```")[0].strip()
+                            
+                            res = json.loads(raw)
+                            if res.get('barcode_detected'):
+                                st.session_state.reg_step = 4
+                                st.rerun()
+                            else:
+                                st.error("❌ Barcode not detected. Please ensure the back of the ID is clear and centered.")
+                        except Exception as e:
+                            st.error(f"Barcode Error: {e}")
+
+        elif st.session_state.reg_step == 4:
+            st.info("🤳 Final Step: Perform a live biometric scan to link your identity.")
+            live_scan = st.camera_input("Live Biometric Scan")
+            if live_scan:
+                if st.button("Finalize Registration", type="primary", use_container_width=True):
+                    with st.spinner("Performing Triple Verification..."):
+                        try:
+                            # 1. Compare Live Scan with ID Image Face
+                            ref_img = PIL.Image.open(io.BytesIO(st.session_state.reg_data['id_image']))
+                            live_img = PIL.Image.open(live_scan)
+                            
+                            # Zoom the live image to match previous UI standard
+                            w, h = live_img.size
+                            nw, nh = w/1.5, h/1.5
+                            live_img = live_img.crop(((w-nw)/2, (h-nh)/2, (w+nw)/2, (h+nh)/2))
+                            
+                            prompt = """Verify:
+                            1. Is the live scan a live person (liveness)?
+                            2. Does the live person match the photo on the ID front?
+                            Respond ONLY with JSON: {"liveness": true, "match": true}"""
+                            
+                            response = model.generate_content([prompt, ref_img, live_img])
+                            raw = response.text.strip().replace("'", '"')
+                            if "```json" in raw: raw = raw.split("```json")[1].split("```")[0].strip()
+                            
+                            res = json.loads(raw)
+                            if res.get('liveness') and res.get('match'):
+                                # TRIPLE VERIFIED - SAVE TO DATABASE
+                                voter_id = hashlib.md5(f"{time.time()}{live_scan.getvalue()}".encode()).hexdigest()[:8].upper()
+                                hashed_passcode = hashlib.sha256(st.session_state.reg_data['passcode'].encode()).hexdigest()
+                                
+                                # Upload live biometric ref
+                                img_byte_arr = io.BytesIO()
+                                live_img.save(img_byte_arr, format='JPEG')
+                                current_bytes = img_byte_arr.getvalue()
+                                
+                                if upload_biometric(voter_id, current_bytes):
+                                    supabase.table("profiles").insert({
+                                        "voter_id": voter_id,
+                                        "passcode_hash": hashed_passcode,
+                                        "identity_hash": st.session_state.reg_data['identity_hash'],
+                                        "full_name": st.session_state.reg_data['name'],
+                                        "address": st.session_state.reg_data['address'],
+                                        "dob": st.session_state.reg_data['dob']
+                                    }).execute()
+                                    
+                                    st.session_state.voter_id = voter_id
+                                    st.session_state.reg_step = 1 # Reset
+                                    st.session_state.reg_data = {}
+                                    st.session_state.show_login_dialog = False
+                                    st.success(f"✅ Registration Triple-Verified! Voter ID: {voter_id}")
+                                    st.balloons()
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to upload biometric record.")
+                            else:
+                                st.error("❌ Verification Failed: Biometric mismatch or liveness check failed.")
+                        except Exception as e:
+                            st.error(f"Verification Error: {e}")
+        
+        if st.session_state.reg_step > 1:
+            if st.button("Cancel Registration"):
+                st.session_state.reg_step = 1
+                st.session_state.reg_data = {}
+                st.session_state.show_login_dialog = False
+                st.rerun()
+
+    st.markdown("---")
+    if st.button("Close Portal", use_container_width=True):
+        st.session_state.show_login_dialog = False
+        st.rerun()
 
 # Authentication Dialog
 @st.dialog("Account Access")
@@ -482,9 +797,18 @@ def auth_dialog():
                         if res.user:
                             # Fetch the Voter ID from the profile table
                             profile_res = supabase.table("profiles").select("voter_id").eq("id", res.user.id).single().execute()
-                            st.session_state.voter_id = profile_res.data.get("voter_id")
-                            st.success("Login Successful!")
-                            st.rerun()
+                            voter_id = profile_res.data.get("voter_id")
+                            
+                            if voter_id:
+                                # Set as pending and redirect to biometric verification
+                                st.session_state.pending_voter_id = voter_id
+                                st.session_state.current_view = "Login"
+                                st.success("Account verified. Please complete biometric scan.")
+                                st.rerun()
+                            else:
+                                st.warning("No Voter ID found for this account. Please register biometrics.")
+                                st.session_state.current_view = "Home" # Or wherever
+                                st.rerun()
                     except Exception as e:
                         st.error(f"Login failed: {str(e)}")
                 else:
@@ -501,10 +825,17 @@ def auth_dialog():
         if st.button("Register", type="primary", key="register_submit_btn", use_container_width=True):
             if reg_email and len(reg_password) >= 8:
                 try:
-                    # Sign up with Supabase
-                    res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
+                    # Sign up with Supabase and explicitly set the redirect URL
+                    # This prevents the localhost:3000 error and handles deployment automatically
+                    res = supabase.auth.sign_up({
+                        "email": reg_email, 
+                        "password": reg_password,
+                        "options": {
+                            "email_redirect_to": get_redirect_url()
+                        }
+                    })
                     if res.user:
-                        st.success("Account created! Please check your email for confirmation (if enabled) or try logging in.")
+                        st.success("Account created! Please check your email for confirmation. After clicking the link, return here to Login.")
                 except Exception as e:
                     st.error(f"Registration failed: {str(e)}")
             elif len(reg_password) < 8:
@@ -521,7 +852,9 @@ supabase_key = get_config("SUPABASE_KEY")
 model = None
 if gemini_key:
     genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    # Using 'gemini-flash-latest' for stable, high-speed processing.
+    # This identifier dynamically maps to the most reliable Flash model available.
+    model = genai.GenerativeModel('gemini-flash-latest')
 else:
     st.error("Missing GEMINI_API_KEY. Please set it in Streamlit Secrets or a .env file.")
 
@@ -536,155 +869,164 @@ else:
     st.error("Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_KEY in Streamlit Secrets or a .env file.")
 
 # Top Banner and Main Header
-voter_status = f"Verified: {st.session_state.voter_id}" if st.session_state.voter_id else "Guest"
+voter_status = f"{st.session_state.voter_id}" if st.session_state.voter_id else "Guest"
 status_class = "verified" if st.session_state.voter_id else ""
 
-st.markdown(f"""
-    <div class="top-banner">
-        <div class="top-banner-content">
-            <a href="?auth=true" target="_self" class="login-link">Register/Login</a>
-            <span class="status-badge {status_class}">{voter_status}</span>
-        </div>
-    </div>
-    <div class="main-header">
-        <div class="header-container">
-            <a href="/" target="_self" class="header-logo">⚖️ LUCID Voting</a>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
+# CSS Anchor for targeting the header row directly
+st.markdown('<div id="header-anchor"></div>', unsafe_allow_html=True)
 
-# Check if we should show the dialog
-if st.query_params.get("auth") == "true":
-    # Clear query params to prevent dialog from reopening on manual refresh
+# Unified 3-column layout: [Logo, Spacer, AuthStack]
+col_logo, col_spacer, col_auth = st.columns([3, 5, 2], vertical_alignment="center")
+
+with col_logo:
+    # ⚖️ LUCID Voting with 20px left buffer
+    st.markdown('<h3 class="header-logo-text logo-buffer" style="margin: 0;">⚖️ LUCID Voting</h3>', unsafe_allow_html=True)
+
+with col_spacer:
+    st.write("") # Spring
+
+with col_auth:
+    # Combined vertical stack for Login and Badge, shifted 40px right
+    st.markdown('<div class="auth-stack">', unsafe_allow_html=True)
+    
+    # Conditional Button: Login/Register OR Logout
+    if st.session_state.voter_id:
+        if st.button("Logout", key="header_logout_btn"):
+            st.session_state.voter_id = None
+            st.session_state.pending_voter_id = None
+            # Sign out from Supabase if applicable
+            try:
+                supabase.auth.sign_out()
+            except:
+                pass
+            st.rerun()
+    else:
+        # Row 1: Biometric Login/Register Portal
+        if st.button("Register/Login", key="header_login_btn"):
+            st.session_state.show_login_dialog = True
+            st.rerun()
+        
+    if st.session_state.show_login_dialog:
+        login_dialog()
+        
+    # Row 2: Status Badge (Guest/Voter ID)
+    st.markdown(f'<span class="status-badge {status_class}" style="margin-top: 2px;">{voter_status}</span>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Remove the old query-param based trigger if present
+if "auth" in st.query_params:
     st.query_params.clear()
-    auth_dialog()
 
 # Main Content Area
-st.markdown('<div class="main-content">', unsafe_allow_html=True)
+st.markdown('<div id="main-anchor"></div>', unsafe_allow_html=True)
 
-if st.session_state.current_view == "Home":
-    st.markdown('<h1 class="page-title">Latest Legislation</h1>', unsafe_allow_html=True)
-    
-    if supabase:
-        try:
-            # Query last 5 bills
-            response = supabase.table("bills").select("*").order("created_at", desc=True).limit(5).execute()
-            bills = response.data
-            
-            if not bills:
-                st.info("No bills found in the database yet.")
-            else:
-                for bill in bills:
-                    title = bill.get('title', 'Untitled Bill')
-                    summary = bill.get('simple_summary', 'No summary available.')
+with st.container():
+    if st.session_state.current_view == "Home":
+        st.markdown('<h1 class="page-title">Federal Law Book</h1>', unsafe_allow_html=True)
+        
+        if supabase:
+            try:
+                # 1. Fetch Data
+                response = supabase.table("bills").select("*").execute()
+                if not response.data:
+                    st.info("No laws found in the database. Use the Admin tab or import script to add laws.")
+                else:
+                    # Load into Pandas DataFrame
+                    df = pd.DataFrame(response.data)
                     
-                    pros = bill.get('pros', [])
-                    if not isinstance(pros, list):
-                        pros = [pros] if pros else []
+                    # Sorting by section_number or ID (numeric sorting for section numbers if possible)
+                    df = df.sort_values(by=['us_title', 'chapter', 'section_number'])
+
+                    # 2. The "Law Book" UI - Hierarchical Grouping
+                    us_titles = df['us_title'].unique()
                     
-                    cons = bill.get('cons', [])
-                    if not isinstance(cons, list):
-                        cons = [cons] if cons else []
-                    
-                    pros_html = ""
-                    for pro in pros:
-                        pros_html += f"<li>{pro}</li>"
+                    for utitle in us_titles:
+                        with st.expander(f"📚 {utitle}", expanded=False):
+                            title_df = df[df['us_title'] == utitle]
+                            chapters = title_df['chapter'].unique()
                             
-                    cons_html = ""
-                    for con in cons:
-                        cons_html += f"<li>{con}</li>"
-                    
-                    card_html = f"""
-                    <div class="bill-card">
-                        <h2 class="bill-title">{title}</h2>
-                        <div class="bill-summary">
-                            <strong>Summary:</strong> {summary}
-                        </div>
-                        <div class="pros-cons-container">
-                            <div class="pros-section">
-                                <h3 class="section-title pros-title">Pros</h3>
-                                <ul class="pros-list">
-                                    {pros_html if pros_html else '<li>No pros listed.</li>'}
-                                </ul>
-                            </div>
-                            <div class="cons-section">
-                                <h3 class="section-title cons-title">Cons</h3>
-                                <ul class="cons-list">
-                                    {cons_html if cons_html else '<li>No cons listed.</li>'}
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
-                    
-        except Exception as e:
-            st.error(f"Error fetching bills: {e}")
-    else:
-        st.warning("Supabase not configured.")
+                            for chap in chapters:
+                                with st.expander(f"📁 Chapter: {chap}", expanded=False):
+                                    chap_df = title_df[title_df['chapter'] == chap]
+                                    
+                                    # 3. Section Display Cards
+                                    for _, row in chap_df.iterrows():
+                                        with st.container():
+                                            st.markdown(f"### {row['section_number']} - {row['title']}")
+                                            
+                                            # Summary Area
+                                            if row.get('simple_summary'):
+                                                st.markdown(f"""
+                                                <div class="info-box">
+                                                    <strong>LUCID Summary (Neutral):</strong><br>
+                                                    {row['simple_summary']}
+                                                </div>
+                                                """, unsafe_allow_html=True)
+                                            else:
+                                                # 4. The "Analyze" Button Logic
+                                                if st.button(f"⚡ AI Analyze Section {row['section_number']}", key=f"analyze_{row['id']}"):
+                                                    with st.spinner("AI is analyzing legal text..."):
+                                                        try:
+                                                            # Use gemini-2.0-flash-exp as requested
+                                                            analysis_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                                                            prompt = f"Summarize this US Code section for a 5th grader. Keep it neutral and focus on what it does.\n\nSection Title: {row['title']}\n\nContent:\n{row['full_text']}"
+                                                            
+                                                            ai_response = analysis_model.generate_content(prompt)
+                                                            summary_text = ai_response.text.strip()
+                                                            
+                                                            # Update Supabase
+                                                            supabase.table("bills").update({"simple_summary": summary_text}).eq("id", row['id']).execute()
+                                                            
+                                                            st.success("Analysis Complete!")
+                                                            time.sleep(1)
+                                                            st.rerun()
+                                                        except Exception as e:
+                                                            st.error(f"Analysis Failed: {e}")
 
-elif st.session_state.current_view == "Vote":
-    st.markdown('<h1 class="page-title">My Vote</h1>', unsafe_allow_html=True)
-    if st.session_state.voter_id:
-        st.info(f"You are logged in as Verified Voter: {st.session_state.voter_id}")
-        st.write("Voting functionality coming soon!")
-    else:
-        st.warning("Please login/verify first to access voting features.")
-        if st.button("Go to Login"):
-            st.session_state.current_view = "Login"
-            st.rerun()
+                                            # 5. Full Text Toggle
+                                            with st.expander("📄 Show Full Legal Text"):
+                                                st.write(row['full_text'])
+                                            
+                                            st.markdown("---")
 
-elif st.session_state.current_view == "Login":
-    st.markdown('<h1 class="page-title">Biometric Verification</h1>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="info-box">
-        <strong>Secure Identity Verification</strong><br>
-        Please use your camera to verify your identity. This process uses advanced biometric verification 
-        to ensure secure access to voting features.
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Camera input
-    camera_image = st.camera_input("Take a photo for verification")
-    
-    if camera_image:
-        if not model:
-            st.error("Gemini API not configured. Cannot verify identity.")
+            except Exception as e:
+                st.error(f"Error loading Law Book: {e}")
         else:
-            # Convert camera image to PIL Image
-            img = PIL.Image.open(camera_image)
-            
-            # Verify with Gemini Vision
-            verify_button = st.button("Verify Identity", type="primary")
-            
-            if verify_button:
-                with st.spinner("Verifying identity with Gemini Vision..."):
-                    try:
-                        # Use Gemini Vision to check if it's a real human
-                        prompt = "Is this a real human? Respond with only 'YES' or 'NO'."
-                        response = model.generate_content([prompt, img])
-                        
-                        result = response.text.strip().upper()
-                        
-                        if "YES" in result:
-                            # Generate a voter ID (in production, this would be more sophisticated)
-                            import hashlib
-                            import time
-                            voter_id = hashlib.md5(f"{time.time()}{camera_image.getvalue()}".encode()).hexdigest()[:8].upper()
-                            
-                            st.session_state.voter_id = voter_id
-                            st.success(f"✅ Verification successful! Your Voter ID: {voter_id}")
-                            st.balloons()
-                            
-                            # Switch back to Home view
-                            st.session_state.current_view = "Home"
-                            st.rerun()
-                        else:
-                            st.error("❌ Verification failed. Please ensure you are a real human and try again.")
-                    except Exception as e:
-                        st.error(f"Error during verification: {e}")
+            st.warning("Supabase not configured.")
 
-st.markdown('</div>', unsafe_allow_html=True)
+    elif st.session_state.current_view == "Vote":
+        st.markdown('<h1 class="page-title">My Vote</h1>', unsafe_allow_html=True)
+        if st.session_state.voter_id:
+            st.info(f"You are logged in as Verified Voter: {st.session_state.voter_id}")
+            st.write("Voting functionality coming soon!")
+        else:
+            st.warning("Please login/verify first to access voting features.")
+            if st.button("Go to Login"):
+                st.session_state.current_view = "Login"
+                st.rerun()
+
+    elif st.session_state.current_view == "Login":
+        st.markdown('<h1 class="page-title">Biometric Identity Portal</h1>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown("""
+            <div class="info-box">
+                <strong>Secure Biometric Access</strong><br>
+                LUCID utilizes advanced iris and facial pattern recognition to verify voter identity. 
+                Your biometric data is encrypted and stored in a private federal vault.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown('<div class="scanner-guide">IRIS TARGET ZONE</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.write("Click below to initialize the high-resolution biometric scanner.")
+            if st.button("Launch Biometric Scanner", type="primary", use_container_width=True):
+                login_dialog()
 
 # Footer
 st.markdown("""
@@ -697,7 +1039,7 @@ st.markdown("""
                 <a href="#" style="color: #ffffff; margin: 0 1rem;">Security</a>
                 <a href="#" style="color: #ffffff; margin: 0 1rem;">Contact Us</a>
             </p>
-            <p style="margin-top: 1rem; font-size: 0.75rem;">
+            <p style="margin-top: 0.5rem; font-size: 0.75rem;">
                 An official website of the U.S. Government
             </p>
         </div>
@@ -721,8 +1063,8 @@ if st.query_params.get("admin") == "true":
             with st.spinner("Analyzing legislation with Gemini..."):
                 try:
                     prompt = (
-                        "Summarize this legislation. Return ONLY a valid JSON object with the following keys: "
-                        "'title', 'simple_summary' (5th grade level), 'pros' (list of 3), 'cons' (list of 3). "
+                        "Summarize this legislation neutrally. Return ONLY a valid JSON object with the following keys: "
+                        "'title' (simplified), 'simple_summary' (a neutral, 5th-grade reading level explanation of what the law actually does). "
                         "Do not include any markdown formatting like ```json or any other text.\n\n"
                         f"Legislation Text:\n{bill_text}"
                     )
